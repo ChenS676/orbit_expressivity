@@ -93,22 +93,7 @@ if args.use_cpu:
 # ])
 
 dataset = None
-if args.dataset == 'bioisostere':
-    print('Loading bioisostere dataset')
-    bioisostere_data_list_inputs = torch.load('custom-datasets/chembl_bioisostere_dataset_inputs.pt')
-    bioisostere_data_list_targets = torch.load('custom-datasets/chembl_bioisostere_dataset_targets.pt')
-    bioisostere_data_list_combined = combined_bioisostere_dataset(
-        bioisostere_data_list_inputs, bioisostere_data_list_targets,
-        only_equivariant=args.bioisostere_only_equivariant)
-    torch.save(bioisostere_data_list_combined, 'custom-datasets/bioisostere_data_list_combined.pt')
-    dataset = bioisostere_data_list_combined
-elif args.dataset == 'mutag':
-    mutag_nx, num_node_classes = nx_molecule_dataset('MUTAG')
-    print('MUTAG orbit size counts:', molecule_dataset_orbit_count(mutag_nx))
-    orbit_mutag_nx = orbit_molecule_dataset(mutag_nx, num_features=7)
-    orbit_mutag_dataset = pyg_dataset_from_nx(orbit_mutag_nx)
-    dataset = orbit_mutag_dataset
-elif args.dataset == 'alchemy':
+if args.dataset == 'alchemy':
     alchemy_nx, num_node_classes = nx_molecule_dataset('alchemy_full')
     if args.max_orbit_alchemy >= 2:
         orbit_alchemy_nx = alchemy_max_orbit_dataset(
@@ -122,10 +107,6 @@ elif args.dataset == 'alchemy':
         dataset = orbit_alchemy_pyg
     else:
         raise Exception('Alchemy currently only supported with args.max_orbit_alchemy >= 2')
-elif args.dataset == 'zinc':
-    zinc_nx, num_node_classes = nx_molecule_dataset('ZINC_full')
-    print('zinc orbit size counts:', molecule_dataset_orbit_count(zinc_nx))
-    raise Exception('Zinc currently not supported for training')
 else:
     raise Exception('Dataset "', args.dataset, '" not recognized')
 
@@ -227,28 +208,6 @@ for epoch in range(args.n_epochs):
         out = model(data.x, data.edge_index, orbits=data.orbits)
         targets = data.transformed_y if args.model == 'max_orbit_gcn' else data.y
         loss = criterion(out, targets, data.non_equivariant_orbits)
-
-        # # custom weighting of loss for nodes that change
-        # changed_node_index = -1
-        # for node, node_feature in enumerate(data.y):
-        #     if node_feature[-1] != 1:  # final bit != 1 means node changed
-        #         changed_node_index = node
-        #         break
-        # if changed_node_index != -1:
-        #     extra_loss_fn = torch.nn.MSELoss()
-        #     loss += extra_loss_fn(out[changed_node_index], data.y[changed_node_index]) * args.changed_node_loss_weight
-
-        # out = model(data)  # [N, C], where N = nodes and C = target classes
-        #
-        # # data.y has size [N, P], where N is the number of nodes in the graph,
-        # # and P is the number of permutations of acceptable answers
-        # # For now, P is exactly the size of the orbit targeted for removal (i.e. permutations on [0, 0, ..., 0, 1])
-        #
-        # possible_targets = torch.swapaxes(data.y, 0, 1)  # [P, N]
-        # possible_losses = torch.zeros(possible_targets.size()[0])  # [P]
-        # for i, possible_target in enumerate(possible_targets):  # possible_target is [N]
-        #     possible_losses[i] = criterion(out, possible_target)
-        # loss = torch.min(possible_losses)
 
         loss.backward()
         optimizer.step()
