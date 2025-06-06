@@ -123,7 +123,7 @@ def max_orbit_feature_extended_graphs(
             nx.set_node_attributes(new_graph, node_attributes)
             yield new_graph
 
-
+import os 
 def alchemy_max_orbit_dataset(
         dataset: List[nx.Graph],
         num_node_classes: int,
@@ -139,18 +139,23 @@ def alchemy_max_orbit_dataset(
     #     # alchemy has 6 node classes
     #     raise Exception('Impossible to create a max_orbit dataset with max_orbit > num_node_classes')
 
-    # STEP 1: remove duplicate graphs
-    unique_dataset = []
-    found_wl_hashes = set()
-    for graph in dataset:
-        wl_hash = compute_wl_hash(graph)
-        if wl_hash not in found_wl_hashes:
-            found_wl_hashes.add(wl_hash)
-            unique_dataset.append(graph)
-    print('Duplicates removed, size is now:', len(unique_dataset))
-    torch.save(
-        unique_dataset, 'alchemy_max_orbit_unique_dataset.pt'
-    )  # save the unique dataset for later use
+    # Step 1: remove duplicates from the dataset
+    unique_path = 'alchemy_max_orbit_unique_dataset.pt'
+    if os.path.exists(unique_path):
+        unique_dataset = torch.load(unique_path)
+        print(f"Loaded unique dataset from {unique_path}, size: {len(unique_dataset)}")
+    # else:
+    #     unique_dataset = []
+    #     found_wl_hashes = set()
+    #     for graph in dataset:
+    #         wl_hash = compute_wl_hash(graph)
+    #         if wl_hash not in found_wl_hashes:
+    #             found_wl_hashes.add(wl_hash)
+    #             unique_dataset.append(graph)
+    #     print(f"Duplicates removed, size is now: {len(unique_dataset)}")
+    #     torch.save(unique_dataset, unique_path)
+        
+    # save the unique dataset for later use
     # STEP 2: remove graphs without an orbit of size at least max_orbit
     filtered_dataset = []  # contains pairs (graph, orbits)
     found_wl_hashes = set()  # track new smaller list of wl hashes
@@ -163,7 +168,7 @@ def alchemy_max_orbit_dataset(
         print(f"Time taken: {elapsed_time} seconds")
         has_max_orbit = False
         for orbit in orbits:
-            if len(orbit) >= max_orbit:
+            if len(orbit) == max_orbit:
                 has_max_orbit = True
                 break
         if has_max_orbit:
@@ -219,7 +224,7 @@ def alchemy_max_orbit_dataset(
             _, orbits = compute_wl_orbits(graph)
             has_max_orbit = False
             for orbit in orbits:
-                if len(orbit) >= max_orbit:
+                if len(orbit) == max_orbit:
                     has_max_orbit = True
                     break
 

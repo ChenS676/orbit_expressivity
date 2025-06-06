@@ -101,7 +101,7 @@ if args.dataset == 'alchemy':
     #     orbit_alchemy_nx = alchemy_max_orbit_dataset(
     #         dataset=alchemy_nx,
     #         num_node_classes=num_node_classes,
-    #         extended_dataset_size=1000,  # TODO: make arg
+    #         extended_dataset_size=100000,  
     #         max_orbit=args.max_orbit_alchemy,
     #         shuffle_targets_within_orbits=args.shuffle_targets_in_max_orbit,
     #     )

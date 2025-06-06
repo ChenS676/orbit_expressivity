@@ -78,20 +78,6 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 if args.use_cpu:
     device = 'cpu'
 
-# G = nx.Graph()
-#
-# G.add_nodes_from([
-#     (0, {'x': (1.0, 1.0), 'y': 1}),
-#     (1, {'x': (2.0, 1.0), 'y': 1}),
-# ])
-#
-# for i in range(2, 7):
-#     G.add_node(i, **{'x': (1.0, 1.0), 'y': 1})
-#
-# G.add_edges_from([
-#     (0, 1), (1, 2), (1, 3), (3, 4), (4, 5), (4, 6)
-# ])
-
 dataset = None
 if args.dataset == 'bioisostere':
     print('Loading bioisostere dataset')
