@@ -51,6 +51,8 @@ def model_accuracy(
             orbit_predictions = predictions[orbit].tolist()
             orbit_ground_truth = ground_truth[orbit].tolist()
             # compute size of multiset intersection between predictions and ground truth
+            print("prediction", orbit_predictions)
+            print("gr", orbit_ground_truth)
             intersection_count = 0
             for prediction in orbit_predictions:
                 if prediction in orbit_ground_truth:

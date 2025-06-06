@@ -299,13 +299,3 @@ for epoch in range(args.n_epochs):
                 'test_graph_accuracy': graph_accuracy,
             }, step=epoch + 1)
 
-# (just compare the set intersections for each orbit)
-
-print('\n--- MUTAG orbits ---')
-check_orbits_against_wl(mutag_nx)
-
-print('\n--- ENZYMES orbits ---')
-check_orbits_against_wl(enzymes_nx, max_graph_size_to_check=66)  # can do 66 in <30 seconds
-
-print('\n--- PROTEINS orbits ---')
-check_orbits_against_wl(proteins_nx, max_graph_size_to_check=60)  # can do 60 in <10 seconds

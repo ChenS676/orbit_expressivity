@@ -12,7 +12,8 @@ from models import RniGCN, UniqueIdGCN, UniqueIdDeepSetsGCN, OrbitIndivGCN, MaxO
 from plotting import plot_labeled_graph
 from testing import model_accuracy
 from wl import check_orbits_against_wl, compute_wl_orbits
-from datasets import nx_molecule_dataset, orbit_molecule_dataset, pyg_dataset_from_nx, nx_from_torch_dataset, \
+from datasets import nx_molecule_dataset, \
+orbit_molecule_dataset, pyg_dataset_from_nx, nx_from_torch_dataset, \
     combined_bioisostere_dataset, molecule_dataset_orbit_count, alchemy_max_orbit_dataset, \
     pyg_max_orbit_dataset_from_nx, MaxOrbitGCNTransform
 
@@ -20,7 +21,7 @@ parser = argparse.ArgumentParser()
 
 # logging options
 parser.add_argument('--loss_log_interval', type=int, default=10)
-parser.add_argument('--use_wandb', type=int, default=0)
+parser.add_argument('--use_wandb', type=int, default=1)
 
 # model
 parser.add_argument('--model', type=str, default='max_orbit_gcn',
@@ -64,7 +65,8 @@ args = parser.parse_args()
 
 # init logging
 if args.use_wandb:
-    wandb.init(project="orbit-gnn")
+    name_tag = f"{args.dataset}_{args.model}_{args.model_max_orbit}"
+    wandb.init(project="orbit-gnn", name=name_tag, config=vars(args))
 
 # fix RNG
 if args.seed == 0:  # sample seed at random
@@ -94,19 +96,17 @@ if args.use_cpu:
 
 dataset = None
 if args.dataset == 'alchemy':
-    alchemy_nx, num_node_classes = nx_molecule_dataset('alchemy_full')
-    if args.max_orbit_alchemy >= 2:
-        orbit_alchemy_nx = alchemy_max_orbit_dataset(
-            dataset=alchemy_nx,
-            num_node_classes=num_node_classes,
-            extended_dataset_size=1000,  # TODO: make arg
-            max_orbit=args.max_orbit_alchemy,
-            shuffle_targets_within_orbits=args.shuffle_targets_in_max_orbit,
-        )
-        orbit_alchemy_pyg = pyg_max_orbit_dataset_from_nx(orbit_alchemy_nx)
-        dataset = orbit_alchemy_pyg
-    else:
-        raise Exception('Alchemy currently only supported with args.max_orbit_alchemy >= 2')
+    # alchemy_nx, num_node_classes = nx_molecule_dataset('alchemy_full')
+    # if args.max_orbit_alchemy >= 2:
+    #     orbit_alchemy_nx = alchemy_max_orbit_dataset(
+    #         dataset=alchemy_nx,
+    #         num_node_classes=num_node_classes,
+    #         extended_dataset_size=1000,  # TODO: make arg
+    #         max_orbit=args.max_orbit_alchemy,
+    #         shuffle_targets_within_orbits=args.shuffle_targets_in_max_orbit,
+    #     )
+    #     orbit_alchemy_pyg = pyg_max_orbit_dataset_from_nx(orbit_alchemy_nx)
+    dataset = torch.load(f'{args.dataset}/alchemy_max_orbit_{args.max_orbit_alchemy}.pt')
 else:
     raise Exception('Dataset "', args.dataset, '" not recognized')
 
@@ -204,7 +204,7 @@ for epoch in range(args.n_epochs):
     for data in train_dataset:
         optimizer.zero_grad()
         data = data.to(device)  # TODO: optimize code for GPU
-
+        model = model.to(device)
         out = model(data.x, data.edge_index, orbits=data.orbits)
         targets = data.transformed_y if args.model == 'max_orbit_gcn' else data.y
         loss = criterion(out, targets, data.non_equivariant_orbits)
@@ -258,13 +258,3 @@ for epoch in range(args.n_epochs):
                 'test_graph_accuracy': graph_accuracy,
             }, step=epoch + 1)
 
-# (just compare the set intersections for each orbit)
-
-print('\n--- MUTAG orbits ---')
-check_orbits_against_wl(mutag_nx)
-
-print('\n--- ENZYMES orbits ---')
-check_orbits_against_wl(enzymes_nx, max_graph_size_to_check=66)  # can do 66 in <30 seconds
-
-print('\n--- PROTEINS orbits ---')
-check_orbits_against_wl(proteins_nx, max_graph_size_to_check=60)  # can do 60 in <10 seconds
