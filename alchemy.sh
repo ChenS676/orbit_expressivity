@@ -31,8 +31,10 @@ cd /hkfs/work/workspace/scratch/cc7738-automorphism/orbit-gnn/
 echo ">>> .bashrc executed: Environment and modules are set up. <<<"
 
 echo "Start time: $(date)"
-for orbits in 7 6 5; do
-    for models in 'gcn' 'gat' 'unique_id_gcn' 'rni_gcn' 'orbit_indiv_gcn' 'max_orbit_gcn'; do
-        python main_alchemy.py --model_max_orbit $orbits --model $models
-    done
+for orbits in 3 9; do
+    python main_alchemy.py --model_max_orbit $orbits --model 'max_orbit_gcn'
+
 done
+
+
+# TODO 'gcn' 'gat' 'unique_id_gcn' 'rni_gcn' 'orbit_indiv_gcn' 

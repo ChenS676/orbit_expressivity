@@ -9,13 +9,8 @@ import wandb
 
 from losses import OrbitSortingCrossEntropyLoss, CrossEntropyLossWrapper
 from models import RniGCN, UniqueIdGCN, UniqueIdDeepSetsGCN, OrbitIndivGCN, MaxOrbitGCN, CustomPygGCN, RniMaxPoolGCN
-from plotting import plot_labeled_graph
 from testing import model_accuracy
-from wl import check_orbits_against_wl, compute_wl_orbits
-from datasets import nx_molecule_dataset, \
-orbit_molecule_dataset, pyg_dataset_from_nx, nx_from_torch_dataset, \
-    combined_bioisostere_dataset, molecule_dataset_orbit_count, alchemy_max_orbit_dataset, \
-    pyg_max_orbit_dataset_from_nx, MaxOrbitGCNTransform
+from datasets import MaxOrbitGCNTransform
 
 parser = argparse.ArgumentParser()
 
@@ -48,7 +43,7 @@ parser.add_argument('--shuffle_dataset', type=int, default=0)
 
 # training
 parser.add_argument('--learning_rate', type=float, default=0.0001)
-parser.add_argument('--n_epochs', type=int, default=2000)
+parser.add_argument('--n_epochs', type=int, default=100)
 parser.add_argument('--changed_node_loss_weight', type=float, default=1)
 parser.add_argument('--loss', type=str, default='orbit_sorting_cross_entropy',
                     choices=['cross_entropy', 'orbit_sorting_cross_entropy'])

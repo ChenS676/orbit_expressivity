@@ -38,9 +38,9 @@ def model_accuracy(
 
         # transform model output if using a max-orbit transform
         if max_orbit_transform is not None:
-            out = max_orbit_transform.transform_output(out, data)
+            out = max_orbit_transform.transform_output(out, data).to(device)
             
-        predictions = torch.argmax(out, dim=1).to('cpu')   
+        predictions = torch.argmax(out, dim=1)
         ground_truth = data.y 
         nodes_correct = 0
         orbits_correct = 0
