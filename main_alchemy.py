@@ -6,16 +6,23 @@ import torch
 from torch_geometric.loader import DataLoader
 from torch_geometric.nn import GAT, GCN
 import wandb
-
+import pandas as pd
 from losses import OrbitSortingCrossEntropyLoss, CrossEntropyLossWrapper
 from models import RniGCN, UniqueIdGCN, UniqueIdDeepSetsGCN, OrbitIndivGCN, MaxOrbitGCN, CustomPygGCN, RniMaxPoolGCN
 from testing import model_accuracy
 from datasets import MaxOrbitGCNTransform
+import os 
+def set_seed(seed):
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+
 
 parser = argparse.ArgumentParser()
 
 # logging options
-parser.add_argument('--loss_log_interval', type=int, default=10)
+parser.add_argument('--loss_log_interval', type=int, default=1)
 parser.add_argument('--use_wandb', type=int, default=1)
 
 # model
@@ -43,19 +50,19 @@ parser.add_argument('--shuffle_dataset', type=int, default=0)
 
 # training
 parser.add_argument('--learning_rate', type=float, default=0.0001)
-parser.add_argument('--n_epochs', type=int, default=100)
+parser.add_argument('--n_epochs', type=int, default=10)
 parser.add_argument('--changed_node_loss_weight', type=float, default=1)
 parser.add_argument('--loss', type=str, default='orbit_sorting_cross_entropy',
                     choices=['cross_entropy', 'orbit_sorting_cross_entropy'])
 
 # evaluation
-parser.add_argument('--train_eval_interval', type=int, default=10)
-parser.add_argument('--test_eval_interval', type=int, default=10)
+parser.add_argument('--train_eval_interval', type=int, default=1)
+parser.add_argument('--test_eval_interval', type=int, default=1)
 
 # misc
-parser.add_argument('--seed', type=int, default=0)
+parser.add_argument('--seed', type=int, default=999)
 parser.add_argument('--use_cpu', type=int, default=0)
-
+parser.add_argument('--runs', type=int, default=3)
 args = parser.parse_args()
 
 # init logging
@@ -88,168 +95,198 @@ if args.use_cpu:
 # G.add_edges_from([
 #     (0, 1), (1, 2), (1, 3), (3, 4), (4, 5), (4, 6)
 # ])
+result = []
+for run in range(0, args.runs):
+    set_seed(args.seed + run)
+    bestscore = None
+    dataset = None
+    ret = []
+    if args.dataset == 'alchemy':
+        # alchemy_nx, num_node_classes = nx_molecule_dataset('alchemy_full')
+        # if args.max_orbit_alchemy >= 2:
+        #     orbit_alchemy_nx = alchemy_max_orbit_dataset(
+        #         dataset=alchemy_nx,
+        #         num_node_classes=num_node_classes,
+        #         extended_dataset_size=100000,  
+        #         max_orbit=args.max_orbit_alchemy,
+        #         shuffle_targets_within_orbits=args.shuffle_targets_in_max_orbit,
+        #     )
+        #     orbit_alchemy_pyg = pyg_max_orbit_dataset_from_nx(orbit_alchemy_nx)
+        dataset = torch.load(f'{args.dataset}/alchemy_max_orbit_{args.max_orbit_alchemy}.pt')
+    else:
+        raise Exception('Dataset "', args.dataset, '" not recognized')
 
-dataset = None
-if args.dataset == 'alchemy':
-    # alchemy_nx, num_node_classes = nx_molecule_dataset('alchemy_full')
-    # if args.max_orbit_alchemy >= 2:
-    #     orbit_alchemy_nx = alchemy_max_orbit_dataset(
-    #         dataset=alchemy_nx,
-    #         num_node_classes=num_node_classes,
-    #         extended_dataset_size=100000,  
-    #         max_orbit=args.max_orbit_alchemy,
-    #         shuffle_targets_within_orbits=args.shuffle_targets_in_max_orbit,
-    #     )
-    #     orbit_alchemy_pyg = pyg_max_orbit_dataset_from_nx(orbit_alchemy_nx)
-    dataset = torch.load(f'{args.dataset}/alchemy_max_orbit_{args.max_orbit_alchemy}.pt')
+    # set up loss
+    if args.loss == 'cross_entropy':
+        criterion = CrossEntropyLossWrapper()
+    elif args.loss == 'orbit_sorting_cross_entropy':
+        criterion = OrbitSortingCrossEntropyLoss()
+    else:
+        raise Exception('Loss "', args.loss, '" not recognized')
+
+    # set number of input and output channels
+    in_channels = dataset[0].x.size()[1]
+    out_channels = in_channels  # same number of classes by default
+    if args.dataset == 'bioisostere':
+        out_channels += 1
+    if args.dataset == 'alchemy' and out_channels < args.max_orbit_alchemy + 1:
+        out_channels = args.max_orbit_alchemy + 1
+
+
+    max_orbit_transform = None
+    if args.model == 'max_orbit_gcn':
+        max_orbit_transform = MaxOrbitGCNTransform(args.model_max_orbit, out_channels)
+        max_orbit_transform.transform_dataset(dataset)
+        out_channels += 1
+
+    # possibly shuffle the dataset
+    if args.shuffle_dataset:
+        random.shuffle(dataset)
+
+    # set up train / test split on dataset
+    train_dataset = dataset[0:int(len(dataset) * args.train_split)]
+    if args.train_on_entire_dataset:
+        train_dataset = dataset
+    test_dataset = dataset[int(len(dataset) * args.train_split):]
+
+    print('Train dataset size:', len(train_dataset))
+    print('Test dataset size:', len(test_dataset))
+
+    # set up model
+    if args.model == 'gat':
+        model = GAT(
+            in_channels=in_channels,
+            hidden_channels=args.gnn_hidden_size,
+            num_layers=args.gnn_layers,
+            out_channels=out_channels,
+        )
+    elif args.model == 'gcn':
+        model = CustomPygGCN(
+            in_channels=in_channels,
+            hidden_channels=args.gnn_hidden_size,
+            num_layers=args.gnn_layers,
+            out_channels=out_channels,
+        )
+    elif args.model == 'unique_id_gcn':
+        model = UniqueIdGCN(
+            in_channels=in_channels,
+            hidden_channels=args.gnn_hidden_size,
+            num_layers=args.gnn_layers,
+            out_channels=out_channels
+        )
+    elif args.model == 'rni_gcn':
+        model = RniMaxPoolGCN(
+            in_channels=in_channels,
+            hidden_channels=args.gnn_hidden_size,
+            num_layers=args.gnn_layers,
+            out_channels=out_channels,
+            rni_channels=args.rni_channels,
+        )
+    elif args.model == 'orbit_indiv_gcn':
+        model = OrbitIndivGCN(
+            in_channels=in_channels,
+            hidden_channels=args.gnn_hidden_size,
+            num_layers=args.gnn_layers,
+            out_channels=out_channels,
+        )
+    elif args.model == 'max_orbit_gcn':
+        model = MaxOrbitGCN(
+            in_channels=in_channels,
+            hidden_channels=args.gnn_hidden_size,
+            num_layers=args.gnn_layers,
+            out_channels=out_channels,
+            max_orbit=args.model_max_orbit,
+        )
+    else:
+        raise Exception('Model "', args.model, '" not recognized')
+
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate, weight_decay=5e-4)
+    print('Training model')
+    model.train()
+    node_accuracy, orbit_accuracy, graph_accuracy = 0, 0, 0
+    for epoch in range(args.n_epochs):
+        epoch_loss = 0
+        for data in train_dataset:
+            optimizer.zero_grad()
+            data = data.to(device)  # TODO: optimize code for GPU
+            model = model.to(device)
+            out = model(data.x, data.edge_index, orbits=data.orbits)
+            targets = data.transformed_y if args.model == 'max_orbit_gcn' else data.y
+            loss = criterion(out, targets, data.non_equivariant_orbits)
+
+            loss.backward()
+            optimizer.step()
+            epoch_loss += loss
+
+        # log results from epoch
+        if (epoch + 1) % args.loss_log_interval == 0:
+            # log the loss
+            print('Epoch:', epoch + 1, '| Epoch loss:', epoch_loss.item())
+
+            if args.use_wandb:
+                wandb.log({
+                    'epoch': epoch + 1,
+                    'train_loss': epoch_loss,
+                }, step=epoch + 1)
+
+        if (epoch + 1) % args.train_eval_interval == 0:
+            # compute train accuracy
+            model.training = False
+            node_accuracy, orbit_accuracy, graph_accuracy = model_accuracy(
+                train_dataset, model, device, max_orbit_transform)
+            model.training = True
+            print('Epoch:', epoch + 1, '| Eval on training dataset | Node accuracy:', node_accuracy,
+                '| Orbit accuracy:', orbit_accuracy, '| Graph accuracy:', graph_accuracy)
+            
+            if bestscore is None:
+                bestscore = {
+                    'node_accuracy': node_accuracy,
+                    'orbit_accuracy': orbit_accuracy,
+                    'graph_accuracy': graph_accuracy,
+                }
+                
+            if args.use_wandb:
+                wandb.log({
+                    'epoch': epoch + 1,
+                    'train_node_accuracy': node_accuracy,
+                    'train_orbit_accuracy': orbit_accuracy,
+                    'train_graph_accuracy': graph_accuracy,
+                }, step=epoch + 1)
+
+        if (epoch + 1) % args.test_eval_interval == 0:
+            # compute test accuracy
+            model.training = False
+            node_accuracy, orbit_accuracy, graph_accuracy = model_accuracy(
+                test_dataset, model, device, max_orbit_transform)
+            model.training = True
+            print('Epoch:', epoch + 1, '| Eval on test dataset | Node accuracy:', node_accuracy,
+                '| Orbit accuracy:', orbit_accuracy, '| Graph accuracy:', graph_accuracy)
+            for key in bestscore.keys():
+                if globals()[key] > bestscore[key]:
+                    bestscore[key] = globals()[key] 
+            if args.use_wandb:
+                wandb.log({
+                    'epoch': epoch + 1,
+                    'test_node_accuracy': node_accuracy,
+                    'test_orbit_accuracy': orbit_accuracy,
+                    'test_graph_accuracy': graph_accuracy,
+                }, step=epoch + 1)
+
+    for key in bestscore.keys():
+        ret.append(bestscore[key])
+    result.append(np.array(ret))
+result = np.asarray(result)
+result_dict = {}
+for (k, m, v) in zip(bestscore.keys(), result.mean(0), result.std(0)):
+    result_dict.update({k: f"{m.item():.3f} +- {v.item():.3f}"})
+
+name_str = f"{args.model}_{args.dataset}_{args.model_max_orbit}_{args.loss}_{args.runs}_{args.n_epochs}"
+result_dict["name"] = name_str
+df = pd.DataFrame([result_dict])
+columns = ["name"] + [col for col in df.columns if col != "name"]
+df = df[columns]
+filename = "results_summary.csv"
+if os.path.exists(filename):
+    df.to_csv(filename, mode="a", header=False, index=False)
 else:
-    raise Exception('Dataset "', args.dataset, '" not recognized')
-
-# set up loss
-if args.loss == 'cross_entropy':
-    criterion = CrossEntropyLossWrapper()
-elif args.loss == 'orbit_sorting_cross_entropy':
-    criterion = OrbitSortingCrossEntropyLoss()
-else:
-    raise Exception('Loss "', args.loss, '" not recognized')
-
-# set number of input and output channels
-in_channels = dataset[0].x.size()[1]
-out_channels = in_channels  # same number of classes by default
-if args.dataset == 'bioisostere':
-    out_channels += 1
-if args.dataset == 'alchemy' and out_channels < args.max_orbit_alchemy + 1:
-    out_channels = args.max_orbit_alchemy + 1
-
-
-max_orbit_transform = None
-if args.model == 'max_orbit_gcn':
-    max_orbit_transform = MaxOrbitGCNTransform(args.model_max_orbit, out_channels)
-    max_orbit_transform.transform_dataset(dataset)
-    out_channels += 1
-
-# possibly shuffle the dataset
-if args.shuffle_dataset:
-    random.shuffle(dataset)
-
-# set up train / test split on dataset
-train_dataset = dataset[0:int(len(dataset) * args.train_split)]
-if args.train_on_entire_dataset:
-    train_dataset = dataset
-test_dataset = dataset[int(len(dataset) * args.train_split):]
-
-print('Train dataset size:', len(train_dataset))
-print('Test dataset size:', len(test_dataset))
-
-# set up model
-if args.model == 'gat':
-    model = GAT(
-        in_channels=in_channels,
-        hidden_channels=args.gnn_hidden_size,
-        num_layers=args.gnn_layers,
-        out_channels=out_channels,
-    )
-elif args.model == 'gcn':
-    model = CustomPygGCN(
-        in_channels=in_channels,
-        hidden_channels=args.gnn_hidden_size,
-        num_layers=args.gnn_layers,
-        out_channels=out_channels,
-    )
-elif args.model == 'unique_id_gcn':
-    model = UniqueIdGCN(
-        in_channels=in_channels,
-        hidden_channels=args.gnn_hidden_size,
-        num_layers=args.gnn_layers,
-        out_channels=out_channels
-    )
-elif args.model == 'rni_gcn':
-    model = RniMaxPoolGCN(
-        in_channels=in_channels,
-        hidden_channels=args.gnn_hidden_size,
-        num_layers=args.gnn_layers,
-        out_channels=out_channels,
-        rni_channels=args.rni_channels,
-    )
-elif args.model == 'orbit_indiv_gcn':
-    model = OrbitIndivGCN(
-        in_channels=in_channels,
-        hidden_channels=args.gnn_hidden_size,
-        num_layers=args.gnn_layers,
-        out_channels=out_channels,
-    )
-elif args.model == 'max_orbit_gcn':
-    model = MaxOrbitGCN(
-        in_channels=in_channels,
-        hidden_channels=args.gnn_hidden_size,
-        num_layers=args.gnn_layers,
-        out_channels=out_channels,
-        max_orbit=args.model_max_orbit,
-    )
-else:
-    raise Exception('Model "', args.model, '" not recognized')
-
-optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate, weight_decay=5e-4)
-
-# train
-print('Training model')
-model.train()
-for epoch in range(args.n_epochs):
-    epoch_loss = 0
-    for data in train_dataset:
-        optimizer.zero_grad()
-        data = data.to(device)  # TODO: optimize code for GPU
-        model = model.to(device)
-        out = model(data.x, data.edge_index, orbits=data.orbits)
-        targets = data.transformed_y if args.model == 'max_orbit_gcn' else data.y
-        loss = criterion(out, targets, data.non_equivariant_orbits)
-
-        loss.backward()
-        optimizer.step()
-        epoch_loss += loss
-
-    # log results from epoch
-    if (epoch + 1) % args.loss_log_interval == 0:
-        # log the loss
-        print('Epoch:', epoch + 1, '| Epoch loss:', epoch_loss.item())
-
-        if args.use_wandb:
-            wandb.log({
-                'epoch': epoch + 1,
-                'train_loss': epoch_loss,
-            }, step=epoch + 1)
-
-    if (epoch + 1) % args.train_eval_interval == 0:
-        # compute train accuracy
-        model.training = False
-        node_accuracy, orbit_accuracy, graph_accuracy = model_accuracy(
-            train_dataset, model, device, max_orbit_transform)
-        model.training = True
-        print('Epoch:', epoch + 1, '| Eval on training dataset | Node accuracy:', node_accuracy,
-              '| Orbit accuracy:', orbit_accuracy, '| Graph accuracy:', graph_accuracy)
-
-        if args.use_wandb:
-            wandb.log({
-                'epoch': epoch + 1,
-                'train_node_accuracy': node_accuracy,
-                'train_orbit_accuracy': orbit_accuracy,
-                'train_graph_accuracy': graph_accuracy,
-            }, step=epoch + 1)
-
-    if (epoch + 1) % args.test_eval_interval == 0:
-        # compute test accuracy
-        model.training = False
-        node_accuracy, orbit_accuracy, graph_accuracy = model_accuracy(
-            test_dataset, model, device, max_orbit_transform)
-        model.training = True
-        print('Epoch:', epoch + 1, '| Eval on test dataset | Node accuracy:', node_accuracy,
-              '| Orbit accuracy:', orbit_accuracy, '| Graph accuracy:', graph_accuracy)
-
-        if args.use_wandb:
-            wandb.log({
-                'epoch': epoch + 1,
-                'test_node_accuracy': node_accuracy,
-                'test_orbit_accuracy': orbit_accuracy,
-                'test_graph_accuracy': graph_accuracy,
-            }, step=epoch + 1)
-
+    df.to_csv(filename, index=False)
