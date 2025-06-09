@@ -8,7 +8,8 @@ from torch_geometric.nn import GAT, GCN
 import wandb
 import pandas as pd
 from losses import OrbitSortingCrossEntropyLoss, CrossEntropyLossWrapper
-from models import RniGCN, UniqueIdGCN, UniqueIdDeepSetsGCN, OrbitIndivGCN, MaxOrbitGCN, CustomPygGCN, RniMaxPoolGCN
+from models import RniGCN, UniqueIdGCN, UniqueIdDeepSetsGCN, OrbitIndivGCN, MaxOrbitGCN, RniMaxPoolGCN
+from models import CustomPygGCN, CustomPygGIN
 from testing import model_accuracy
 from datasets import MaxOrbitGCNTransform
 import os 
@@ -17,7 +18,12 @@ def set_seed(seed):
     torch.cuda.manual_seed_all(seed)
     np.random.seed(seed)
     random.seed(seed)
+from datasets import nx_molecule_dataset, orbit_molecule_dataset, pyg_dataset_from_nx, nx_from_torch_dataset, \
+    combined_bioisostere_dataset, molecule_dataset_orbit_count, alchemy_max_orbit_dataset, \
+    pyg_max_orbit_dataset_from_nx, MaxOrbitGCNTransform
 
+# Task 1 can you please add GIN, GAT, MixHop, SAGE, and RNI models to the code?
+# Task plot motivating example
 
 parser = argparse.ArgumentParser()
 
@@ -26,13 +32,13 @@ parser.add_argument('--loss_log_interval', type=int, default=1)
 parser.add_argument('--use_wandb', type=int, default=1)
 
 # model
-parser.add_argument('--model', type=str, default='max_orbit_gcn',
+parser.add_argument('--model', type=str, default='gin',
                     choices=['gcn', 'gat', 'unique_id_gcn', 'rni_gcn', 'orbit_indiv_gcn', 'max_orbit_gcn'])
 parser.add_argument('--gnn_layers', type=int, default=4)
 parser.add_argument('--gnn_hidden_size', type=int, default=40)
 parser.add_argument('--rni_channels', type=int, default=10)
 # max orbit of max-orbit model, only used for max_orbit_gcn
-parser.add_argument('--model_max_orbit', type=int, default=6)
+parser.add_argument('--model_max_orbit', type=int, default=9)
 
 # dataset
 parser.add_argument('--train_on_entire_dataset', type=int, default=1)
@@ -50,7 +56,7 @@ parser.add_argument('--shuffle_dataset', type=int, default=0)
 
 # training
 parser.add_argument('--learning_rate', type=float, default=0.0001)
-parser.add_argument('--n_epochs', type=int, default=10)
+parser.add_argument('--n_epochs', type=int, default=100)
 parser.add_argument('--changed_node_loss_weight', type=float, default=1)
 parser.add_argument('--loss', type=str, default='orbit_sorting_cross_entropy',
                     choices=['cross_entropy', 'orbit_sorting_cross_entropy'])
@@ -68,7 +74,7 @@ args = parser.parse_args()
 # init logging
 if args.use_wandb:
     name_tag = f"{args.dataset}_{args.model}_{args.model_max_orbit}"
-    wandb.init(project="orbit-gnn", name=name_tag, config=vars(args))
+    wandb.init(project=f"orbit-{args.model}", name=name_tag, config=vars(args))
 
 # fix RNG
 if args.seed == 0:  # sample seed at random
@@ -82,19 +88,6 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 if args.use_cpu:
     device = 'cpu'
 
-# G = nx.Graph()
-#
-# G.add_nodes_from([
-#     (0, {'x': (1.0, 1.0), 'y': 1}),
-#     (1, {'x': (2.0, 1.0), 'y': 1}),
-# ])
-#
-# for i in range(2, 7):
-#     G.add_node(i, **{'x': (1.0, 1.0), 'y': 1})
-#
-# G.add_edges_from([
-#     (0, 1), (1, 2), (1, 3), (3, 4), (4, 5), (4, 6)
-# ])
 result = []
 for run in range(0, args.runs):
     set_seed(args.seed + run)
@@ -132,7 +125,7 @@ for run in range(0, args.runs):
     if args.dataset == 'alchemy' and out_channels < args.max_orbit_alchemy + 1:
         out_channels = args.max_orbit_alchemy + 1
 
-
+    # https://chatgpt.com/share/6844ad78-4920-800d-8433-989523f0275d
     max_orbit_transform = None
     if args.model == 'max_orbit_gcn':
         max_orbit_transform = MaxOrbitGCNTransform(args.model_max_orbit, out_channels)
@@ -154,14 +147,16 @@ for run in range(0, args.runs):
 
     # set up model
     if args.model == 'gat':
-        model = GAT(
+        raise NotImplementedError('GAT model is not implemented yet')
+    elif args.model == 'gcn':
+        model = CustomPygGCN(
             in_channels=in_channels,
             hidden_channels=args.gnn_hidden_size,
             num_layers=args.gnn_layers,
             out_channels=out_channels,
         )
-    elif args.model == 'gcn':
-        model = CustomPygGCN(
+    elif args.model == 'gin':
+        model = CustomPygGIN(
             in_channels=in_channels,
             hidden_channels=args.gnn_hidden_size,
             num_layers=args.gnn_layers,
@@ -286,6 +281,7 @@ df = pd.DataFrame([result_dict])
 columns = ["name"] + [col for col in df.columns if col != "name"]
 df = df[columns]
 filename = "results_summary.csv"
+print(df)
 if os.path.exists(filename):
     df.to_csv(filename, mode="a", header=False, index=False)
 else:

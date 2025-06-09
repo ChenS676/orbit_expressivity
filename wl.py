@@ -4,8 +4,7 @@ import networkx as nx
 
 from graph_theory import compute_orbits
 from plotting import plot_labeled_graph
-from torch_geometric.datasets import TUDataset
-import torch
+
 
 # input is a list of ints but is treated as unordered by sorting first
 def multi_set_hash_function(input_set: list) -> int:
@@ -18,35 +17,6 @@ def wl(graph: nx.Graph) -> Tuple[int, List[int]]:
     if node_attributes:
         for node in graph.nodes:
             labels[node] = hash(node_attributes[node])  # initial labels are hashes
-    num_unique = len(set(labels))
-
-    for wl_iteration in range(1, len(graph) + 1):
-        previous_labels = labels[:]
-        previous_num_unique = num_unique
-        global_hash = multi_set_hash_function(previous_labels)
-
-        for node in graph.nodes:
-            neighbours = graph[node]
-            neighbour_labels = []
-            for neighbour in neighbours:
-                neighbour_labels.append(previous_labels[neighbour])
-            neighbour_hash = multi_set_hash_function(neighbour_labels)
-            combined_hash = hash((previous_labels[node], neighbour_hash, global_hash))
-            labels[node] = combined_hash
-
-        num_unique = len(set(labels))
-        if num_unique == previous_num_unique:
-            # orbit WL has converged
-            return wl_iteration, labels
-    raise Exception('WL did not converge: something is wrong with the algorithm')
-
-
-def wl_auto(graph: nx.Graph) -> Tuple[int, List[int]]:
-    labels = [-1] * len(graph)
-    node_attributes = nx.get_node_attributes(graph, 'x')
-    if node_attributes:
-        for node in graph.nodes:
-            labels[node] = hash(tuple(node_attributes[node]))  # initial labels are hashes
     num_unique = len(set(labels))
 
     for wl_iteration in range(1, len(graph) + 1):
@@ -120,39 +90,3 @@ def check_orbits_against_wl(
                 plot_labeled_graph(graph, orbits=orbits)
     print('done checking:', skip_count, 'graphs skipped')
     print('orbit sizes:', {size: orbit_size_counts[size] for size in range(1, 1001) if orbit_size_counts[size] > 0})
-
-
-# Conversion function from PyG to NetworkX
-def to_networkx(graph) -> nx.Graph:
-    G = nx.Graph()
-    edge_index = graph.edge_index.numpy()
-    x = graph.x.numpy()
-    y = graph.y.item()
-
-    for i in range(x.shape[0]):
-        G.add_node(i, x=x[i], y=y)
-
-    for i in range(edge_index.shape[1]):
-        u, v = edge_index[:, i]
-        G.add_edge(u, v)
-
-    return G
-
-
-def main():
-    # Load the MUTAG dataset
-    dataset = TUDataset(root='/tmp/MUTAG', name='MUTAG')
-    for i in range(len(dataset)):
-
-        graph = dataset[i]
-        nx_graph = to_networkx(graph)
-        wl_hash = compute_wl_hash(nx_graph)
-        iterations, orbits = compute_wl_orbits(nx_graph)
-        print(f"Converged in {iterations} iterations.")
-        print("Orbits:", orbits)
-        plot_labeled_graph(nx_graph, orbits=orbits, index=i)
-
-if __name__ == "__main__":
-    main()
-
-

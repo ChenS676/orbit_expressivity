@@ -123,7 +123,7 @@ def max_orbit_feature_extended_graphs(
             nx.set_node_attributes(new_graph, node_attributes)
             yield new_graph
 
-import os 
+
 def alchemy_max_orbit_dataset(
         dataset: List[nx.Graph],
         num_node_classes: int,
@@ -135,47 +135,34 @@ def alchemy_max_orbit_dataset(
     # returns a list of (graph, orbits, non-equivariant orbits) tuples
     print('Constructing max orbit dataset from alchemy:', len(dataset), '->', extended_dataset_size)
 
-    # if max_orbit > num_node_classes:
-    #     # alchemy has 6 node classes
-    #     raise Exception('Impossible to create a max_orbit dataset with max_orbit > num_node_classes')
+    if max_orbit > num_node_classes:
+        # alchemy has 6 node classes
+        raise Exception('Impossible to create a max_orbit dataset with max_orbit > num_node_classes')
 
-    # Step 1: remove duplicates from the dataset
-    unique_path = 'alchemy_max_orbit_unique_dataset.pt'
-    if os.path.exists(unique_path):
-        unique_dataset = torch.load(unique_path)
-        print(f"Loaded unique dataset from {unique_path}, size: {len(unique_dataset)}")
-    # else:
-    #     unique_dataset = []
-    #     found_wl_hashes = set()
-    #     for graph in dataset:
-    #         wl_hash = compute_wl_hash(graph)
-    #         if wl_hash not in found_wl_hashes:
-    #             found_wl_hashes.add(wl_hash)
-    #             unique_dataset.append(graph)
-    #     print(f"Duplicates removed, size is now: {len(unique_dataset)}")
-    #     torch.save(unique_dataset, unique_path)
-        
-    # save the unique dataset for later use
+    # STEP 1: remove duplicate graphs
+    unique_dataset = []
+    found_wl_hashes = set()
+    for graph in dataset:
+        wl_hash = compute_wl_hash(graph)
+        if wl_hash not in found_wl_hashes:
+            found_wl_hashes.add(wl_hash)
+            unique_dataset.append(graph)
+    print('Duplicates removed, size is now:', len(unique_dataset))
+
     # STEP 2: remove graphs without an orbit of size at least max_orbit
     filtered_dataset = []  # contains pairs (graph, orbits)
     found_wl_hashes = set()  # track new smaller list of wl hashes
     for graph in unique_dataset:
-        import time
-        start_time = time.time()
         _, orbits = compute_wl_orbits(graph)
-        end_time = time.time()
-        elapsed_time = end_time - start_time
-        print(f"Time taken: {elapsed_time} seconds")
         has_max_orbit = False
         for orbit in orbits:
-            if len(orbit) == max_orbit:
+            if len(orbit) >= max_orbit:
                 has_max_orbit = True
                 break
         if has_max_orbit:
             filtered_dataset.append((graph, orbits))
             wl_hash = compute_wl_hash(graph)
             found_wl_hashes.add(wl_hash)
-
     print('Filtered to only include graphs with an orbit of size at least', max_orbit)
     print('Size is now:', len(filtered_dataset))
 
@@ -224,7 +211,7 @@ def alchemy_max_orbit_dataset(
             _, orbits = compute_wl_orbits(graph)
             has_max_orbit = False
             for orbit in orbits:
-                if len(orbit) == max_orbit:
+                if len(orbit) >= max_orbit:
                     has_max_orbit = True
                     break
 
@@ -314,7 +301,6 @@ def pyg_max_orbit_dataset_from_nx(nx_data: List[Tuple[nx.Graph, List[List[int]],
 
 # For all n, count the number of graphs that contain an orbit of size n
 # Plot each graph with an orbit of size 'plot_with_size'
-
 def molecule_dataset_orbit_count(dataset: List[nx.Graph], plot_with_size=0) -> Dict[int, int]:
     orbit_counts = {i: 0 for i in range(1, 100)}
     for graph_index, graph in enumerate(dataset):
