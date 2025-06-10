@@ -32,22 +32,23 @@ def model_accuracy(
 
     for data in dataset:
         # compute predictions and ground truth
-
         data = data.to(device)
         out = model(data.x, data.edge_index, orbits=data.orbits)
 
         # transform model output if using a max-orbit transform
         if max_orbit_transform is not None:
-            out = max_orbit_transform.transform_output(out, data).to(device)
-            
-        predictions = torch.argmax(out, dim=1)
-        ground_truth = data.y 
+            out = max_orbit_transform.transform_output(out, data)
+
+        predictions = torch.argmax(out, dim=1)  # no need to softmax, since it's monotonic
+        ground_truth = data.y  # assume class labels are given in data.y
+
         nodes_correct = 0
         orbits_correct = 0
 
         # check correctness of each orbit
         orbits = data.orbits
         for orbit in orbits:
+            predictions = predictions.to(device)
             orbit_predictions = predictions[orbit].tolist()
             orbit_ground_truth = ground_truth[orbit].tolist()
             # compute size of multiset intersection between predictions and ground truth

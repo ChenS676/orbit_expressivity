@@ -23,13 +23,13 @@ parser.add_argument('--loss_log_interval', type=int, default=10)
 parser.add_argument('--use_wandb', type=int, default=1)
 
 # model
-parser.add_argument('--model', type=str, default='max_orbit_gcn',
+parser.add_argument('--model', type=str, default='gcn',
                     choices=['gcn', 'gat', 'unique_id_gcn', 'rni_gcn', 'orbit_indiv_gcn', 'max_orbit_gcn'])
 parser.add_argument('--gnn_layers', type=int, default=4)
 parser.add_argument('--gnn_hidden_size', type=int, default=40)
 parser.add_argument('--rni_channels', type=int, default=10)
 # max orbit of max-orbit model, only used for max_orbit_gcn
-parser.add_argument('--model_max_orbit', type=int, default=12)
+parser.add_argument('--model_max_orbit', type=int, default=6)
 
 # dataset
 parser.add_argument('--train_on_entire_dataset', type=int, default=1)
@@ -47,7 +47,7 @@ parser.add_argument('--shuffle_dataset', type=int, default=0)
 
 # training
 parser.add_argument('--learning_rate', type=float, default=0.0001)
-parser.add_argument('--n_epochs', type=int, default=200)
+parser.add_argument('--n_epochs', type=int, default=2000)
 parser.add_argument('--changed_node_loss_weight', type=float, default=1)
 parser.add_argument('--loss', type=str, default='orbit_sorting_cross_entropy',
                     choices=['cross_entropy', 'orbit_sorting_cross_entropy'])
@@ -64,7 +64,7 @@ args = parser.parse_args()
 
 # init logging
 if args.use_wandb:
-    wandb.init(project="orbit-gnn-original", name=f"{args.model}-{args.dataset}-{args.max_orbit_alchemy}")
+    wandb.init(project="orbit-gnn")
 
 # fix RNG
 if args.seed == 0:  # sample seed at random
@@ -227,12 +227,32 @@ for epoch in range(args.n_epochs):
     for data in train_dataset:
         optimizer.zero_grad()
         data = data.to(device)  # TODO: optimize code for GPU
-
-        data = data.to(device)
         model = model.to(device)
         out = model(data.x, data.edge_index, orbits=data.orbits)
         targets = data.transformed_y if args.model == 'max_orbit_gcn' else data.y
         loss = criterion(out, targets, data.non_equivariant_orbits)
+
+        # # custom weighting of loss for nodes that change
+        # changed_node_index = -1
+        # for node, node_feature in enumerate(data.y):
+        #     if node_feature[-1] != 1:  # final bit != 1 means node changed
+        #         changed_node_index = node
+        #         break
+        # if changed_node_index != -1:
+        #     extra_loss_fn = torch.nn.MSELoss()
+        #     loss += extra_loss_fn(out[changed_node_index], data.y[changed_node_index]) * args.changed_node_loss_weight
+
+        # out = model(data)  # [N, C], where N = nodes and C = target classes
+        #
+        # # data.y has size [N, P], where N is the number of nodes in the graph,
+        # # and P is the number of permutations of acceptable answers
+        # # For now, P is exactly the size of the orbit targeted for removal (i.e. permutations on [0, 0, ..., 0, 1])
+        #
+        # possible_targets = torch.swapaxes(data.y, 0, 1)  # [P, N]
+        # possible_losses = torch.zeros(possible_targets.size()[0])  # [P]
+        # for i, possible_target in enumerate(possible_targets):  # possible_target is [N]
+        #     possible_losses[i] = criterion(out, possible_target)
+        # loss = torch.min(possible_losses)
 
         loss.backward()
         optimizer.step()
@@ -282,3 +302,14 @@ for epoch in range(args.n_epochs):
                 'test_orbit_accuracy': orbit_accuracy,
                 'test_graph_accuracy': graph_accuracy,
             }, step=epoch + 1)
+
+# (just compare the set intersections for each orbit)
+
+# print('\n--- MUTAG orbits ---')
+# check_orbits_against_wl(mutag_nx)
+
+# print('\n--- ENZYMES orbits ---')
+# check_orbits_against_wl(enzymes_nx, max_graph_size_to_check=66)  # can do 66 in <30 seconds
+
+# print('\n--- PROTEINS orbits ---')
+# check_orbits_against_wl(proteins_nx, max_graph_size_to_check=60)  # can do 60 in <10 seconds

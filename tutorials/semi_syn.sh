@@ -21,15 +21,14 @@ source /hkfs/home/project/hk-project-test-p0021478/cc7738/anaconda3/etc/profile.
 
 conda activate base
 
-orbits_list=(3 5 6)
+orbits_list=(2)
 # <<< conda initialize <<<
 module purge
 module load devel/cmake/3.18   
 module load devel/cuda/11.8   
 module load compiler/gnu/12
 conda activate EAsF
-cd /hkfs/work/workspace/scratch/cc7738-automorphism/orbit-gnn/
- 
+cd /hkfs/work/workspace/scratch/cc7738-automorphism/archiv/orbit-gnn
 echo ">>> .bashrc executed: Environment and modules are set up. <<<"
 
 #!/bin/bash
@@ -42,15 +41,8 @@ batch_size=3
 
 for orbits in "${orbits_list[@]}"; do
     # Launch in background
-    python main_alchemy.py \
-        --model_max_orbit "$orbits" \
-        --model 'gcn' \
-        --n_epochs 100 \
-        --loss_log_interval 10 \
-        --train_eval_interval 10 \
-        --test_eval_interval 10 \
-        --runs 3 &
-
+    echo "Running with model_max_orbit: python main.py --max_orbit_alchemy $orbits"
+    python main.py --max_orbit_alchemy $orbits
     ((counter++))
 
     # Wait for batch to finish

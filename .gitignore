@@ -139,9 +139,8 @@ datasets/
 
 # logging
 wandb/
-alchemy/
-alchemy_max_orbit_unique_dataset.pt
-custom-datasets/
-dataset/        
+archiv/
+dataset/
 error/
 log/
+
