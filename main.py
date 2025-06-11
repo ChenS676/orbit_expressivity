@@ -8,7 +8,7 @@ from torch_geometric.nn import GAT, GCN
 import wandb
 
 from losses import OrbitSortingCrossEntropyLoss, CrossEntropyLossWrapper
-from models import RniGCN, UniqueIdGCN, UniqueIdDeepSetsGCN, OrbitIndivGCN, MaxOrbitGCN, CustomPygGCN, RniMaxPoolGCN
+from models import RniGCN, UniqueIdGCN, UniqueIdDeepSetsGCN, OrbitIndivGCN, MaxOrbitGCN, CustomPygGCN, RniMaxPoolGCN, CustomPygGAT
 from plotting import plot_labeled_graph
 from testing import model_accuracy
 from wl import check_orbits_against_wl, compute_wl_orbits
@@ -23,7 +23,8 @@ parser.add_argument('--loss_log_interval', type=int, default=10)
 parser.add_argument('--use_wandb', type=int, default=1)
 
 # model
-parser.add_argument('--model', type=str, default='gcn',
+
+parser.add_argument('--model', type=str, default='gat',
                     choices=['gcn', 'gat', 'unique_id_gcn', 'rni_gcn', 'orbit_indiv_gcn', 'max_orbit_gcn'])
 parser.add_argument('--gnn_layers', type=int, default=4)
 parser.add_argument('--gnn_hidden_size', type=int, default=40)
@@ -171,7 +172,7 @@ print('Test dataset size:', len(test_dataset))
 
 # set up model
 if args.model == 'gat':
-    model = GAT(
+    model = CustomPygGAT(
         in_channels=in_channels,
         hidden_channels=args.gnn_hidden_size,
         num_layers=args.gnn_layers,

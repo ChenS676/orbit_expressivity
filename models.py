@@ -9,6 +9,11 @@ from torch_geometric.nn import GCNConv
 from torchvision.ops import MLP
 from torch_geometric.nn import GCN
 from torch_geometric.data import Data
+import torch
+from torch import nn
+from torch_geometric.nn import GCN, GAT, SAGEConv  # You can import more as needed
+from typing import Optional, List
+
 
 
 class DeprecatedCustomGCN(torch.nn.Module):
@@ -88,6 +93,7 @@ class CustomPygGCN(torch.nn.Module):
         self.gcn = GCN(in_channels, hidden_channels, num_layers, out_channels)
 
     def init_conv(self, in_channels, out_channels: int, **kwargs):
+        # 
         return self.gcn.init_conv(in_channels, out_channels, **kwargs)
 
     def reset_parameters(self):
@@ -107,6 +113,62 @@ class CustomPygGCN(torch.nn.Module):
 
     def __repr__(self):
         return self.gcn.__repr__()
+
+
+
+
+class CustomPygGAT(nn.Module):
+    """
+    Generalized wrapper for PyG GNNs (e.g., GCN, GAT, GraphSAGE) to allow
+    compatibility with orbit-aware methods (like OrbitIndivGCN).
+    """
+    def __init__(self, model_type: str, in_channels: int, hidden_channels: int, num_layers: int, out_channels: int):
+        super().__init__()
+        
+        if model_type.lower() == 'gcn':
+            self.model = GCN(in_channels, hidden_channels, num_layers, out_channels)
+        elif model_type.lower() == 'gat':
+            self.model = GAT(in_channels, hidden_channels, num_layers, out_channels)
+        elif model_type.lower() == 'sage':
+            self.model = self._build_graphsage(in_channels, hidden_channels, num_layers, out_channels)
+        else:
+            raise ValueError(f"Unsupported model_type: {model_type}. Choose from 'gcn', 'gat', 'sage'.")
+
+    def _build_graphsage(self, in_channels, hidden_channels, num_layers, out_channels):
+        layers = nn.ModuleList()
+        for i in range(num_layers):
+            input_dim = in_channels if i == 0 else hidden_channels
+            output_dim = out_channels if i == num_layers - 1 else hidden_channels
+            layers.append(SAGEConv(input_dim, output_dim))
+        return nn.Sequential(*layers)
+
+    def reset_parameters(self):
+        if hasattr(self.model, 'reset_parameters'):
+            self.model.reset_parameters()
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        edge_index: torch.Tensor,
+        orbits: Optional[List[torch.Tensor]] = None
+    ) -> torch.Tensor:
+        if isinstance(self.model, nn.Sequential):
+            for conv in self.model:
+                x = conv(x, edge_index)
+                x = torch.relu(x)
+            return x
+        else:
+            return self.model(x, edge_index)
+
+    @torch.no_grad()
+    def inference(self, loader, device=None, progress_bar=False):
+        if hasattr(self.model, 'inference'):
+            return self.model.inference(loader, device=device, progress_bar=progress_bar)
+        else:
+            raise NotImplementedError("Inference not implemented for this model type.")
+
+    def __repr__(self):
+        return self.model.__repr__()
 
 
 class RniGCN(CustomPygGCN):
